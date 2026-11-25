@@ -498,6 +498,67 @@ module  {
 !s32i = !cir.int<s, 32>
 
 module  {
+  cir.func @no_fold_cmp_vector_with_undef_element() -> !cir.vector<4 x !s32i> {
+    %vec_1 = cir.const #cir.const_vector<[#cir.undef : !s32i, #cir.int<2> : !s32i,
+      #cir.int<3> : !s32i, #cir.int<4> : !s32i]> : !cir.vector<4 x !s32i>
+    %vec_2 = cir.const #cir.const_vector<[#cir.int<5> : !s32i, #cir.int<6> : !s32i,
+      #cir.int<7> : !s32i, #cir.int<8> : !s32i]> : !cir.vector<4 x !s32i>
+    %new_vec = cir.vec.cmp(lt, %vec_1, %vec_2) : !cir.vector<4 x !s32i>, !cir.vector<4 x !s32i>
+    cir.return %new_vec : !cir.vector<4 x !s32i>
+  }
+
+  // An undef element is not evaluated, so the comparison stays.
+  // CHECK-LABEL: cir.func{{.*}} @no_fold_cmp_vector_with_undef_element
+  // CHECK: %[[RES:.*]] = cir.vec.cmp(lt, %{{.*}}, %{{.*}}) : !cir.vector<4 x !s32i>, !cir.vector<4 x !s32i>
+  // CHECK-NEXT: cir.return %[[RES]] : !cir.vector<4 x !s32i>
+}
+
+// -----
+
+!s32i = !cir.int<s, 32>
+
+module  {
+  cir.func @no_fold_fcmp_vector_with_poison_element() -> !cir.vector<4 x !s32i> {
+    %vec_1 = cir.const #cir.const_vector<[#cir.fp<1.000000e+00> : !cir.float, #cir.fp<2.000000e+00>
+      : !cir.float, #cir.fp<3.000000e+00> : !cir.float, #cir.fp<4.000000e+00> : !cir.float]> : !cir.vector<4 x !cir.float>
+    %vec_2 = cir.const #cir.const_vector<[#cir.fp<2.000000e+00> : !cir.float, #cir.poison
+      : !cir.float, #cir.fp<3.000000e+00> : !cir.float, #cir.fp<1.000000e+00> : !cir.float]> : !cir.vector<4 x !cir.float>
+    %new_vec = cir.vec.fcmp(olt, %vec_1, %vec_2) : !cir.vector<4 x !cir.float>, !cir.vector<4 x !s32i>
+    cir.return %new_vec : !cir.vector<4 x !s32i>
+  }
+
+  // A poison element is not evaluated, so the comparison stays.
+  // CHECK-LABEL: cir.func{{.*}} @no_fold_fcmp_vector_with_poison_element
+  // CHECK: %[[RES:.*]] = cir.vec.fcmp(olt, %{{.*}}, %{{.*}}) : !cir.vector<4 x !cir.float>, !cir.vector<4 x !s32i>
+  // CHECK-NEXT: cir.return %[[RES]] : !cir.vector<4 x !s32i>
+}
+
+// -----
+
+!s32i = !cir.int<s, 32>
+
+module  {
+  cir.func @no_fold_true_fcmp_scalable_vector(
+      %a: !cir.vector<[4] x !cir.float, sve_data>,
+      %b: !cir.vector<[4] x !cir.float, sve_data>)
+      -> !cir.vector<[4] x !s32i, sve_data> {
+    %new_vec = cir.vec.fcmp(true, %a, %b) :
+        !cir.vector<[4] x !cir.float, sve_data>, !cir.vector<[4] x !s32i, sve_data>
+    cir.return %new_vec : !cir.vector<[4] x !s32i, sve_data>
+  }
+
+  // A scalable vector cannot be a constant vector, so the comparison stays.
+  // CHECK-LABEL: cir.func{{.*}} @no_fold_true_fcmp_scalable_vector
+  // CHECK: %[[RES:.*]] = cir.vec.fcmp(true, %{{.*}}, %{{.*}}) :
+  // CHECK-SAME: !cir.vector<[4] x !cir.float, sve_data>, !cir.vector<[4] x !s32i, sve_data>
+  // CHECK-NEXT: cir.return %[[RES]] : !cir.vector<[4] x !s32i, sve_data>
+}
+
+// -----
+
+!s32i = !cir.int<s, 32>
+
+module  {
   cir.func @no_fold_fcmp_vector_with_fenv() -> !cir.vector<4 x !s32i> {
     %vec_1 = cir.const #cir.const_vector<[#cir.fp<1.000000e+00> : !cir.float, #cir.fp<0x7FC00000>
       : !cir.float, #cir.fp<3.000000e+00> : !cir.float, #cir.fp<4.000000e+00> : !cir.float]> : !cir.vector<4 x !cir.float>

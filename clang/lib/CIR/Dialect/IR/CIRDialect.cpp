@@ -4481,6 +4481,14 @@ LogicalResult cir::CmpOp::verify() {
 // VecCmpOp
 //===----------------------------------------------------------------------===//
 
+/// Whether every element of \p vec is an \p AttrTy literal. A constant vector
+/// can also hold other elements, such as undef, poison or zero, which the
+/// folders do not evaluate.
+template <typename AttrTy>
+static bool hasOnlyLiteralElements(cir::ConstVectorAttr vec) {
+  return llvm::all_of(vec.getElts(), llvm::IsaPred<AttrTy>);
+}
+
 OpFoldResult cir::VecCmpOp::fold(FoldAdaptor adaptor) {
   auto lhsVecAttr =
       mlir::dyn_cast_if_present<cir::ConstVectorAttr>(adaptor.getLhs());
@@ -4494,6 +4502,10 @@ OpFoldResult cir::VecCmpOp::fold(FoldAdaptor adaptor) {
   auto IntTy = mlir::dyn_cast<cir::IntType>(inputElemTy);
   // FIXME: Fold vectors of bool too?
   if (!IntTy)
+    return {};
+
+  if (!hasOnlyLiteralElements<cir::IntAttr>(lhsVecAttr) ||
+      !hasOnlyLiteralElements<cir::IntAttr>(rhsVecAttr))
     return {};
 
   cir::CmpOpKind opKind = adaptor.getKind();
@@ -4584,6 +4596,10 @@ OpFoldResult cir::VecFCmpOp::fold(FoldAdaptor adaptor) {
 
   cir::FCmpOpKind kind = getKind();
   if (kind == cir::FCmpOpKind::_true || kind == cir::FCmpOpKind::_false) {
+    // A scalable vector cannot be a constant vector.
+    if (getType().isScalable())
+      return {};
+
     mlir::Attribute elt =
         cir::IntAttr::get(getType().getElementType(),
                           (kind == cir::FCmpOpKind::_true) ? -1LL : 0LL);
@@ -4597,6 +4613,10 @@ OpFoldResult cir::VecFCmpOp::fold(FoldAdaptor adaptor) {
   auto rhsVecAttr =
       mlir::dyn_cast_if_present<cir::ConstVectorAttr>(adaptor.getRhs());
   if (!lhsVecAttr || !rhsVecAttr)
+    return {};
+
+  if (!hasOnlyLiteralElements<cir::FPAttr>(lhsVecAttr) ||
+      !hasOnlyLiteralElements<cir::FPAttr>(rhsVecAttr))
     return {};
 
   mlir::ArrayAttr lhsElts = lhsVecAttr.getElts();
@@ -4759,6 +4779,8 @@ OpFoldResult cir::VecShuffleDynamicOp::fold(FoldAdaptor adaptor) {
       mlir::isa_and_nonnull<cir::ConstVectorAttr>(indices)) {
     auto vecAttr = mlir::cast<cir::ConstVectorAttr>(vec);
     auto indicesAttr = mlir::cast<cir::ConstVectorAttr>(indices);
+    if (!hasOnlyLiteralElements<cir::IntAttr>(indicesAttr))
+      return {};
 
     mlir::ArrayAttr vecElts = vecAttr.getElts();
     mlir::ArrayAttr indicesElts = indicesAttr.getElts();
@@ -4772,6 +4794,10 @@ OpFoldResult cir::VecShuffleDynamicOp::fold(FoldAdaptor adaptor) {
     for (const auto &idxAttr : indicesElts.getAsRange<cir::IntAttr>()) {
       uint64_t idxValue = idxAttr.getUInt();
       uint64_t newIdx = idxValue & maskBits;
+      // The mask rounds the element count up to a power of two, so a masked
+      // index can still be out of range.
+      if (newIdx >= numElements)
+        return {};
       elements.push_back(vecElts[newIdx]);
     }
 
@@ -4821,6 +4847,8 @@ OpFoldResult cir::VecTernaryOp::fold(FoldAdaptor adaptor) {
   auto condVec = mlir::cast<cir::ConstVectorAttr>(cond);
   auto lhsVec = mlir::cast<cir::ConstVectorAttr>(lhs);
   auto rhsVec = mlir::cast<cir::ConstVectorAttr>(rhs);
+  if (!hasOnlyLiteralElements<cir::IntAttr>(condVec))
+    return {};
 
   mlir::ArrayAttr condElts = condVec.getElts();
 
