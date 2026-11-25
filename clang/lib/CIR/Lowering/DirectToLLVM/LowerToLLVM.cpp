@@ -622,11 +622,7 @@ static mlir::LLVM::CallIntrinsicOp replaceOpWithCallLLVMIntrinsicOp(
 }
 
 static llvm::StringRef getConstrainedRoundingMetadata(cir::FenvAttr fenv) {
-  std::optional<cir::FPDynamicRoundingMode> rounding =
-      fenv.getDynamicRoundingMode();
-  if (!rounding)
-    return "round.tonearest";
-  switch (*rounding) {
+  switch (fenv.getDynamicRoundingMode()) {
   case cir::FPDynamicRoundingMode::ToNearest:
     return "round.tonearest";
   case cir::FPDynamicRoundingMode::Downward:
@@ -646,8 +642,7 @@ static llvm::StringRef getConstrainedRoundingMetadata(cir::FenvAttr fenv) {
 static llvm::StringRef getConstrainedExceptMetadata(cir::FenvAttr fenv) {
   if (fenv.canIgnoreExceptions())
     return "fpexcept.ignore";
-  return fenv.getStrictExceptOrDefault() ? "fpexcept.strict"
-                                         : "fpexcept.maytrap";
+  return fenv.getStrictExcept() ? "fpexcept.strict" : "fpexcept.maytrap";
 }
 
 static mlir::Value
